@@ -52,32 +52,45 @@ def get_user_events(telefone: str, db: Session = Depends(get_db)):
 # =================================================================
 @app.post("/webhook", summary="Recebe e processa mensagens do usuário")
 async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)):
-    """
-    Este endpoint é o ponto de entrada principal. Ele recebe uma mensagem,
-    a processa como um comando (gasto, agenda) ou como uma pergunta para a IA.
-    """
-    
-    # 1. Encontrar ou criar o usuário
+    # ... (a parte de encontrar ou criar o usuário continua igual)
     usuario = db.query(models.Usuario).filter(models.Usuario.telefone == msg.telefone).first()
     if not usuario:
         usuario = models.Usuario(telefone=msg.telefone, nome=f"Usuário {msg.telefone}")
         db.add(usuario)
-        db.commit()
-        db.refresh(usuario)
+        # O commit aqui é para o usuário. Vamos adicionar um print também.
+        try:
+            db.commit()
+            db.refresh(usuario)
+            print(f"--- DEBUG: Usuário {usuario.telefone} criado/encontrado com ID: {usuario.id} ---")
+        except Exception as e:
+            db.rollback()
+            print(f"--- ERRO AO CRIAR/SALVAR USUÁRIO: {e} ---")
+            raise HTTPException(status_code=500, detail=f"Erro de banco de dados ao salvar usuário: {e}")
 
     texto = msg.mensagem.lower().strip()
 
-    # 2. Processamento de Comandos (forma segura)
+    # Vamos modificar o bloco try/except do processamento de comandos
     try:
-        if texto.startswith("agenda:"):
-            descricao = texto.replace("agenda:", "").strip()
-            if not descricao:
-                raise ValueError("A descrição da agenda não pode ser vazia.")
+        # Adicione aqui o processamento do comando 'receita:'
+        if texto.startswith("receita:"):
+            partes = texto.replace("receita:", "").strip().split()
+            if len(partes) < 2:
+                raise ValueError("Formato inválido. Use: receita <valor> <descrição>")
             
-            novo_evento = models.Evento(usuario_id=usuario.id, tipo="agenda", descricao=descricao)
+            valor_str = partes[0].replace(",",".")
+            valor = Decimal(valor_str)
+            descricao = " ".join(partes[1:])
+            
+            print("--- DEBUG: Objeto RECEITA criado. Pronto para adicionar. ---")
+            novo_evento = models.Evento(usuario_id=usuario.id, tipo="receita", valor=valor, descricao=descricao)
+            
             db.add(novo_evento)
+            print("--- DEBUG: db.add(novo_evento) para RECEITA executado. ---")
+            
             db.commit()
-            return {"resposta": f"Lembrete agendado: '{descricao}'"}
+            print("--- DEBUG: db.commit() para RECEITA executado! O dado DEVE estar no banco. ---")
+            
+            return {"resposta": f"Receita de R$ {valor:.2f} ({descricao}) registrada."}
 
         elif texto.startswith("gasto:"):
             partes = texto.replace("gasto:", "").strip().split()
@@ -88,20 +101,28 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
             valor = Decimal(valor_str)
             descricao = " ".join(partes[1:])
             
+            print("--- DEBUG: Objeto GASTO criado. Pronto para adicionar. ---")
             novo_evento = models.Evento(usuario_id=usuario.id, tipo="gasto", valor=valor, descricao=descricao)
+            
             db.add(novo_evento)
+            print("--- DEBUG: db.add(novo_evento) para GASTO executado. ---")
+            
             db.commit()
+            print("--- DEBUG: db.commit() para GASTO executado! O dado DEVE estar no banco. ---")
+            
             return {"resposta": f"Gasto de R$ {valor:.2f} ({descricao}) registrado."}
-        
-        # Adicione aqui outros comandos como 'receita:' se desejar
-        # ...
 
-    except (ValueError, IndexError) as e:
-        return {"resposta": f"Erro ao processar seu comando: {e}. Tente novamente."}
+        # ... (a parte do 'agenda:' e da IA pode continuar aqui) ...
+        else:
+             resposta_ia = await ia.consulta_ia(telefone=usuario.telefone, prompt=texto)
+             return {"resposta": resposta_ia}
 
-    # 3. Se não for um comando, consultar a IA
-    resposta_ia = await ia.consulta_ia(telefone=usuario.telefone, prompt=texto)
-    return {"resposta": resposta_ia}
+    # MUDANÇA IMPORTANTE: Capturando QUALQUER exceção
+    except Exception as e:
+        print(f"--- ERRO CAPTURADO! A TRANSAÇÃO SERÁ REVERTIDA. ERRO: {e} ---")
+        db.rollback()  # Desfaz a transação explicitamente
+        # Retorna o erro real para o dashboard, para que ele também mostre o erro.
+        raise HTTPException(status_code=500, detail=f"Erro interno no servidor: {e}")
 
 # =================================================================
 # Bloco para rodar em desenvolvimento (AGORA NO FINAL DE TUDO)
