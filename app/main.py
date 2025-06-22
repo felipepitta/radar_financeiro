@@ -1,7 +1,8 @@
 import uvicorn
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-from decimal import Decimal # Importar Decimal para lidar com os valores
+from decimal import Decimal
+from typing import List, Optional
 
 # Importações limpas
 from . import models, schemas, ia
@@ -87,11 +88,16 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
 
-@app.get("/users/{telefone}/events", summary="Lista todos os eventos de um usuário específico")
+@app.get("/users/{telefone}/events", response_model=List[schemas.Evento], summary="Lista todos os eventos de um usuário específico")
 def get_user_events(telefone: str, db: Session = Depends(get_db)):
+    """
+    Busca um usuário pelo telefone e retorna todos os seus eventos.
+    O 'response_model' garante que a saída seja uma lista de eventos
+    formatada segundo o schema 'schemas.Evento'.
+    """
     usuario = db.query(models.Usuario).filter(models.Usuario.telefone == telefone).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
-    # Retorna os eventos usando o relacionamento que definimos!
+    # A lógica interna não muda. O FastAPI usa o response_model para fazer a conversão.
     return usuario.eventos

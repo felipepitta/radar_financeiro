@@ -1,14 +1,63 @@
-# Importa a classe principal do Pydantic, que dá os poderes de validação.
-from pydantic import BaseModel
+# app/schemas.py (versão final e completa)
 
-# Define um "Schema" para validar os dados de entrada de um webhook.
-# Um Schema é um contrato que os dados devem seguir para serem considerados válidos.
-# A classe herda de 'BaseModel' para ganhar a capacidade de validar automaticamente.
-class WebhookIn(BaseModel):
-    # O campo 'telefone' é obrigatório e deve ser do tipo string.
-    # Ex: "5511999999999"
+from pydantic import BaseModel
+from datetime import datetime
+from decimal import Decimal
+from typing import List, Optional
+
+# -------------------------------------------------------------------
+# SCHEMAS PARA EVENTOS
+# -------------------------------------------------------------------
+
+class EventoBase(BaseModel):
+    """Campos que um evento sempre terá."""
+    tipo: str
+    descricao: str
+    valor: Optional[Decimal] = None
+
+class EventoCreate(EventoBase):
+    """Schema usado para criar um novo evento (não precisamos no momento, mas é uma boa prática)."""
+    pass
+
+class Evento(EventoBase):
+    """
+    Este é o schema para LER um evento. É o que será retornado pela API.
+    Ele inclui campos que são gerados pelo banco de dados, como 'id'.
+    """
+    id: int
+    usuario_id: int
+    criado_em: datetime
+
+    class Config:
+        # Permite que o Pydantic leia os dados diretamente de modelos ORM (como os do SQLAlchemy).
+        from_attributes = True
+
+# -------------------------------------------------------------------
+# SCHEMAS PARA USUÁRIOS
+# -------------------------------------------------------------------
+
+class UsuarioBase(BaseModel):
+    """Campos base de um usuário."""
     telefone: str
-    
-    # O campo 'mensagem' é obrigatório e deve ser do tipo string.
-    # Ex: "Quero saber meu saldo"
+    nome: Optional[str] = None
+
+class UsuarioCreate(UsuarioBase):
+    """Schema para criar um novo usuário."""
+    pass
+
+class Usuario(UsuarioBase):
+    """Schema para LER um usuário, incluindo a lista de seus eventos."""
+    id: int
+    # Importante: A lista de eventos usará o schema 'Evento' que definimos acima.
+    eventos: List[Evento] = []
+
+    class Config:
+        from_attributes = True
+        
+# -------------------------------------------------------------------
+# SCHEMA PARA WEBHOOK (O que já tínhamos)
+# -------------------------------------------------------------------
+
+class WebhookIn(BaseModel):
+    telefone: str
     mensagem: str
