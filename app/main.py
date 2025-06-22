@@ -1,4 +1,5 @@
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from decimal import Decimal
@@ -7,6 +8,8 @@ from typing import List, Optional
 # Importações limpas
 from . import models, schemas, ia
 from .database import SessionLocal, engine
+
+load_dotenv()
 
 # Cria as tabelas (OK para desenvolvimento)
 models.Base.metadata.create_all(bind=engine)
