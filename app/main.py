@@ -18,8 +18,6 @@ app = FastAPI(
 
 # =================================================================
 # DEPENDÊNCIA: Gerenciador de Sessão do Banco de Dados
-# Esta função garante que cada requisição tenha sua própria sessão
-# e que ela seja FECHADA ao final, mesmo que ocorra um erro.
 # =================================================================
 def get_db():
     db = SessionLocal()
@@ -29,7 +27,25 @@ def get_db():
         db.close()
 
 # =================================================================
-# ENDPOINT PRINCIPAL: /webhook
+# ENDPOINT DE LEITURA: /users/{telefone}/events
+# (MOVEMOS ELE PARA CIMA, PARA O LUGAR CORRETO)
+# =================================================================
+@app.get("/users/{telefone}/events", response_model=List[schemas.Evento], summary="Lista todos os eventos de um usuário específico")
+def get_user_events(telefone: str, db: Session = Depends(get_db)):
+    """
+    Busca um usuário pelo telefone e retorna todos os seus eventos.
+    O 'response_model' garante que a saída seja uma lista de eventos
+    formatada segundo o schema 'schemas.Evento'.
+    """
+    usuario = db.query(models.Usuario).filter(models.Usuario.telefone == telefone).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # A lógica interna não muda. O FastAPI usa o response_model para fazer a conversão.
+    return usuario.eventos
+
+# =================================================================
+# ENDPOINT DE ESCRITA: /webhook
 # =================================================================
 @app.post("/webhook", summary="Recebe e processa mensagens do usuário")
 async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)):
@@ -39,7 +55,6 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
     """
     
     # 1. Encontrar ou criar o usuário
-    # A lógica de 'find-or-create' garante que sempre teremos um usuário para associar ao evento.
     usuario = db.query(models.Usuario).filter(models.Usuario.telefone == msg.telefone).first()
     if not usuario:
         usuario = models.Usuario(telefone=msg.telefone, nome=f"Usuário {msg.telefone}")
@@ -56,7 +71,6 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
             if not descricao:
                 raise ValueError("A descrição da agenda não pode ser vazia.")
             
-            # Cria o evento associado ao ID do usuário
             novo_evento = models.Evento(usuario_id=usuario.id, tipo="agenda", descricao=descricao)
             db.add(novo_evento)
             db.commit()
@@ -67,7 +81,7 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
             if len(partes) < 2:
                 raise ValueError("Formato inválido. Use: gasto <valor> <descrição>")
             
-            valor_str = partes[0].replace(",",".") # Aceita vírgula e ponto como decimal
+            valor_str = partes[0].replace(",",".")
             valor = Decimal(valor_str)
             descricao = " ".join(partes[1:])
             
@@ -75,29 +89,19 @@ async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)
             db.add(novo_evento)
             db.commit()
             return {"resposta": f"Gasto de R$ {valor:.2f} ({descricao}) registrado."}
+        
+        # Adicione aqui outros comandos como 'receita:' se desejar
+        # ...
 
     except (ValueError, IndexError) as e:
-        # Se o comando do usuário for mal formatado, retorna um erro amigável.
         return {"resposta": f"Erro ao processar seu comando: {e}. Tente novamente."}
 
     # 3. Se não for um comando, consultar a IA
     resposta_ia = await ia.consulta_ia(telefone=usuario.telefone, prompt=texto)
     return {"resposta": resposta_ia}
 
-# Bloco para rodar em desenvolvimento
+# =================================================================
+# Bloco para rodar em desenvolvimento (AGORA NO FINAL DE TUDO)
+# =================================================================
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-
-@app.get("/users/{telefone}/events", response_model=List[schemas.Evento], summary="Lista todos os eventos de um usuário específico")
-def get_user_events(telefone: str, db: Session = Depends(get_db)):
-    """
-    Busca um usuário pelo telefone e retorna todos os seus eventos.
-    O 'response_model' garante que a saída seja uma lista de eventos
-    formatada segundo o schema 'schemas.Evento'.
-    """
-    usuario = db.query(models.Usuario).filter(models.Usuario.telefone == telefone).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
-    # A lógica interna não muda. O FastAPI usa o response_model para fazer a conversão.
-    return usuario.eventos
