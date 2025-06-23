@@ -1,9 +1,11 @@
 # 1. Bibliotecas padrão do Python
 import os
+from dotenv import load_dotenv
 from decimal import Decimal
 from typing import List, Optional
 
-# (linha em branco)
+# Carregamento do .env
+load_dotenv()
 
 # 2. Bibliotecas de terceiros (pip install)
 import uvicorn
@@ -12,14 +14,9 @@ from fastapi import FastAPI, Request, Response, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 
-# (linha em branco)
-
 # 3. Imports da nossa própria aplicação
 from . import models, schemas, ia
 from .database import SessionLocal, engine, get_db
-
-# Carregamento do .env
-load_dotenv()
 
 # Cria as tabelas (OK para desenvolvimento)
 models.Base.metadata.create_all(bind=engine)
@@ -29,66 +26,111 @@ app = FastAPI(
     description="API para gerenciar transações financeiras e interagir com IA."
 )
 
+@app.get("/users/{telefone}/transactions", response_model=List[schemas.Transaction])
+def get_user_transactions(telefone: str, db: Session = Depends(get_db)):
+    """
+    Busca todas as transações de um usuário específico.
+    O dashboard nos envia o telefone como '5511...' e precisamos buscar
+    pelo formato que o Twilio salva, 'whatsapp:+5511...'.
+    """
+    sender_id_formatado = f"whatsapp:+{telefone}"
+    print(f"Buscando transações para o sender_id: {sender_id_formatado}")
+
+    transacoes = db.query(models.Transaction)\
+                   .filter(models.Transaction.sender_id == sender_id_formatado)\
+                   .order_by(models.Transaction.created_at.desc())\
+                   .all()
+
+    if not transacoes:
+        # Se não encontrarmos transações, é melhor retornar um erro 404.
+        # O dashboard saberá como lidar com isso.
+        raise HTTPException(status_code=404, detail="Nenhuma transação encontrada para este usuário.")
+
+    return transacoes
+
 @app.post("/webhook/twilio")
 async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
     """
-    Recebe uma mensagem do Twilio, salva no banco, analisa com IA e responde.
+    Recebe uma mensagem do Twilio, salva a transação bruta, a enriquece com dados da IA,
+    e responde de forma inteligente para o usuário.
     """
+    # Bloco Try/Except: Uma rede de segurança para capturar qualquer erro inesperado
+    # que possa acontecer durante o processamento, evitando que a aplicação quebre.
     try:
-        # 1. Receber e processar a mensagem do usuário
+        # --- 1. RECEPÇÃO E PARSE DA MENSAGEM ---
+        # Pega os dados do formulário enviado pela Twilio.
         form_data = await request.form()
         message_body = form_data.get("Body", "Mensagem vazia")
         sender_id = form_data.get("From", "Número desconhecido")
 
         print(f"MENSAGEM RECEBIDA de {sender_id}: {message_body}")
 
-        # 2. Salvar a transação bruta no banco de dados
+        # --- 2. PERSISTÊNCIA INICIAL ---
+        # Cria um registro inicial no banco de dados apenas com a mensagem bruta.
+        # Isso garante que nenhuma mensagem seja perdida, mesmo que a IA falhe.
         raw_transaction = models.Transaction(
             sender_id=sender_id,
             message_body=message_body
         )
         db.add(raw_transaction)
         db.commit()
-        db.refresh(raw_transaction)
+        db.refresh(raw_transaction) # Atualiza o objeto com o ID gerado pelo banco
         print(f"Transação bruta salva no DB com ID: {raw_transaction.id}")
 
-        # 3. Enviar o texto para análise da Inteligência Artificial
+        # --- 3. ANÁLISE COM INTELIGÊNCIA ARTIFICIAL ---
+        # Envia o texto da mensagem para o nosso módulo de IA para extrair dados.
         print("Enviando para análise da IA...")
-        dados_analisados = ia.analisar_transacao(message_body)
+        dados_analisados = ia.analisar_transacao_simples(message_body)
         print(f"IA retornou dados estruturados: {dados_analisados}")
 
-        # 4. Construir a resposta para o usuário
+        # --- 4. ENRIQUECIMENTO DOS DADOS NO BANCO ---
+        # Se a IA retornou dados válidos, atualizamos o registro no banco.
+        if dados_analisados and not dados_analisados.get("error"):
+            # Atualiza o objeto 'raw_transaction' com os novos dados
+            raw_transaction.item = dados_analisados.get('item')
+            raw_transaction.valor = dados_analisados.get('valor')
+            raw_transaction.categoria = dados_analisados.get('categoria')
+            
+            db.commit() # Salva as novas informações no banco
+            print(f"Transação ID {raw_transaction.id} enriquecida com dados da IA.")
+        
+        # --- 5. CONSTRUÇÃO DA RESPOSTA PARA O WHATSAPP ---
         twiml_response = MessagingResponse()
         
-        # Cria uma resposta mais inteligente para o usuário, se a IA funcionou
+        # Se a IA funcionou, cria uma resposta rica para o usuário.
         if dados_analisados and not dados_analisados.get("error"):
+            # CORREÇÃO DO BUG: Verifica se o valor é None ANTES de formatar.
+            valor_recebido = dados_analisados.get('valor')
+            valor_numerico = valor_recebido if valor_recebido is not None else 0.0
+            
             item = dados_analisados.get('item', 'não identificado')
-            valor = dados_analisados.get('valor', 0.0)
             categoria = dados_analisados.get('categoria', 'não identificada')
             
             resposta_formatada = (
-                f"Entendido! ✅\n"
-                f"Item: {item}\n"
-                f"Valor: R$ {valor:.2f}\n"
-                f"Categoria: {categoria}"
+                f"Entendido! ✅\n\n"
+                f"Item: *{item}*\n"
+                f"Valor: *R$ {valor_numerico:.2f}*\n"
+                f"Categoria: *{categoria}*"
             )
             twiml_response.message(resposta_formatada)
         else:
-            # Resposta padrão se a IA falhar ou não entender
+            # Caso a IA falhe, envia uma resposta padrão.
             twiml_response.message("Recebido! Salvei sua anotação, mas não consegui extrair os detalhes.")
 
-        # 5. Enviar a resposta final para a Twilio
+        # --- 6. ENVIO DA RESPOSTA ---
+        # Retorna a resposta no formato XML que a Twilio espera.
         return Response(content=str(twiml_response), media_type="application/xml")
 
     except Exception as e:
+        # Se qualquer erro não previsto ocorrer, ele será capturado aqui.
         print(f"--- ERRO CRÍTICO NO WEBHOOK ---")
         print(f"TIPO DE ERRO: {type(e).__name__}")
         print(f"MENSAGEM DO ERRO: {e}")
-        db.rollback() # Garante que a transação seja desfeita em caso de erro
+        db.rollback() # Desfaz qualquer alteração pendente no banco para manter a consistência.
         
-        # Envia uma resposta de erro genérica para a Twilio
+        # Envia uma mensagem de erro amigável para o usuário.
         error_response = MessagingResponse()
-        error_response.message("Desculpe, ocorreu um erro ao processar sua mensagem.")
+        error_response.message("Desculpe, ocorreu um erro inesperado ao processar sua mensagem. Tente novamente.")
         return Response(content=str(error_response), media_type="application/xml")
 
 # =================================================================

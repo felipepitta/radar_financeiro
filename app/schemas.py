@@ -32,6 +32,22 @@ class Evento(EventoBase):
         # Permite que o Pydantic leia os dados diretamente de modelos ORM (como os do SQLAlchemy).
         from_attributes = True
 
+# Este schema define como uma transação será representada ao sair da nossa API.
+# Ele funciona como um filtro e um validador de dados.
+class Transaction(BaseModel):
+    id: int
+    message_body: str
+    created_at: datetime
+    item: Optional[str] = None
+    valor: Optional[Decimal] = None
+    categoria: Optional[str] = None
+
+    # Configuração essencial para que o Pydantic consiga ler os dados
+    # diretamente de um objeto do SQLAlchemy (nosso 'models.Transaction').
+    class Config:
+        from_attributes = True # Em versões antigas do Pydantic, isso era orm_mode = True
+
+
 # -------------------------------------------------------------------
 # SCHEMAS PARA USUÁRIOS
 # -------------------------------------------------------------------

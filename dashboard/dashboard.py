@@ -69,7 +69,7 @@ with col2:
 
     try:
         # Faz a chamada GET para o novo endpoint da sua API
-        response = requests.get(f"{API_URL}/users/{telefone_usuario}/events")
+        response = requests.get(f"{API_URL}/users/{telefone_usuario}/transactions")
         response.raise_for_status()
         
         lista_transacoes = response.json()
