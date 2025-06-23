@@ -5,7 +5,8 @@ from sqlalchemy import (
     String, 
     DateTime, 
     ForeignKey, 
-    Numeric
+    Numeric,
+    func
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -55,3 +56,11 @@ class Evento(Base):
     # Acessível via 'meu_evento.usuario'.
     # 'back_populates' cria a ligação de volta a partir do modelo Usuario.
     usuario = relationship("Usuario", back_populates="eventos")
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(String, nullable=False)
+    message_body = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

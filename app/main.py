@@ -9,7 +9,7 @@ from typing import List, Optional
 
 # Importações limpas
 from . import models, schemas, ia
-from .database import SessionLocal, engine
+from .database import SessionLocal, engine, get_db 
 
 load_dotenv()
 
@@ -22,30 +22,42 @@ app = FastAPI(
 )
 
 @app.post("/webhook/twilio")
-async def webhook_twilio(request: Request):
+async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
     """
-    Este endpoint recebe as mensagens enviadas via WhatsApp pelo Twilio.
+    Endpoint com depuração aprimorada para o banco de dados.
     """
     try:
-        # O Twilio envia dados como um formulário, então usamos request.form()
         form_data = await request.form()
-        message_body = form_data.get("Body", "") # Conteúdo da mensagem do usuário
-        sender_id = form_data.get("From", "")     # Número do usuário (ex: "whatsapp:+5511999998888")
+        message_body = form_data.get("Body", "")
+        sender_id = form_data.get("From", "")
 
-        # Imprimimos no terminal para depurar e ver a mágica acontecendo
-        print(f"Mensagem recebida de {sender_id}: {message_body}")
+        print(f"MENSAGEM RECEBIDA de {sender_id}: {message_body}")
+        
+        print("PASSO 1: Preparando para salvar no banco de dados...")
+        new_transaction = models.Transaction(
+            sender_id=sender_id,
+            message_body=message_body
+        )
+        db.add(new_transaction)
+        print("PASSO 2: Objeto adicionado à sessão. Tentando o commit...")
+        
+        db.commit()
+        print("PASSO 3: Commit executado SEM ERRO APARENTE. Tentando o refresh...")
 
-        # --- A Resposta Inteligente ---
-        # Por enquanto, vamos criar uma resposta simples de confirmação
-        # Usamos a classe MessagingResponse da biblioteca da Twilio
+        db.refresh(new_transaction)
+        print(f"PASSO 4: SUCESSO REAL! Transação salva no DB com ID: {new_transaction.id}")
+
         twiml_response = MessagingResponse()
-        twiml_response.message(f"Radar Financeiro recebeu: '{message_body}'. Estamos processando!")
+        twiml_response.message(f"Radar Financeiro recebeu e SALVOU: '{message_body}'.")
 
-        # Retornamos a resposta no formato TwiML (um tipo de XML) que o Twilio entende
         return Response(content=str(twiml_response), media_type="application/xml")
 
     except Exception as e:
-        print(f"Erro no webhook: {e}")
+        print(f"--- ERRO CRÍTICO NO BLOCO TRY ---")
+        print(f"TIPO DE ERRO: {type(e)}")
+        print(f"MENSAGEM DO ERRO: {e}")
+        print("--- EXECUTANDO ROLLBACK ---")
+        db.rollback()
         return Response(content="Ocorreu um erro interno no webhook.", status_code=500)
 
 # =================================================================
