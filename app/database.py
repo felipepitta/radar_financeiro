@@ -12,7 +12,7 @@ SQLALCHEMY_DATABASE_URL = "postgresql://postgres:[Luiz1610*]@db.cqmxiirynmeehctv
 # É configurado para usar o endereço que definimos acima.
 # O argumento 'connect_args' é específico para SQLite e permite que a aplicação (que pode usar várias threads)
 # se comunique com o banco sem erros.
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
 # Cria uma "fábrica" de sessões. Uma sessão é uma conversa individual com o banco.
 # 'SessionLocal' não é uma sessão, mas uma classe que, quando chamada (ex: db = SessionLocal()), cria uma sessão.
