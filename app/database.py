@@ -6,13 +6,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # "sqlite:///" indica que estamos usando o dialeto SQLite.
 # "radar.db" é o nome do arquivo que será o nosso banco de dados.
 # O comentário é uma excelente prática, lembrando de trocar para um banco mais robusto em produção.
-DATABASE_URL = "sqlite:///radar.db"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:[Luiz1610*]@db.cqmxiirynmeehctvbewp.supabase.co:5432/postgres"
 
 # Cria o "motor" da aplicação, o ponto central de comunicação com o banco de dados.
 # É configurado para usar o endereço que definimos acima.
 # O argumento 'connect_args' é específico para SQLite e permite que a aplicação (que pode usar várias threads)
 # se comunique com o banco sem erros.
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 
 # Cria uma "fábrica" de sessões. Uma sessão é uma conversa individual com o banco.
 # 'SessionLocal' não é uma sessão, mas uma classe que, quando chamada (ex: db = SessionLocal()), cria uma sessão.
