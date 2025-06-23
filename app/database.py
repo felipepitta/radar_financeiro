@@ -24,3 +24,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Cria uma classe base para todos os nossos modelos (tabelas).
 # Qualquer classe que herdar de 'Base' será automaticamente reconhecida pelo SQLAlchemy como uma tabela.
 Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
