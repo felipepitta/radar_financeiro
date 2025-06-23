@@ -1,6 +1,6 @@
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response, Form
+from fastapi import FastAPI, Request, Response, Form, Depends, HTTPException
 from twilio.twiml.messaging_response import MessagingResponse
 import os
 from sqlalchemy.orm import Session
