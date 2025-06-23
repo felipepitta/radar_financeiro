@@ -50,6 +50,12 @@ async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
         twiml_response = MessagingResponse()
         twiml_response.message(f"Radar Financeiro recebeu e SALVOU: '{message_body}'.")
 
+        # --- NOVA LINHA DE DEBUG ---
+        print("--- TwiML Gerado para Resposta ---")
+        print(str(twiml_response))
+        print("---------------------------------")
+        # ---------------------------
+
         return Response(content=str(twiml_response), media_type="application/xml")
 
     except Exception as e:
