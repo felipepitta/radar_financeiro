@@ -64,3 +64,6 @@ class Transaction(Base):
     sender_id = Column(String, nullable=False)
     message_body = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    item = Column(String, nullable=True)
+    valor = Column(Numeric(10, 2), nullable=True)
+    categoria = Column(String, nullable=True)

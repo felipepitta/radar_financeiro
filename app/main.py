@@ -29,24 +29,39 @@ app = FastAPI(
 @app.get("/users/{telefone}/transactions", response_model=List[schemas.Transaction])
 def get_user_transactions(telefone: str, db: Session = Depends(get_db)):
     """
-    Busca todas as transações de um usuário específico.
-    O dashboard nos envia o telefone como '5511...' e precisamos buscar
-    pelo formato que o Twilio salva, 'whatsapp:+5511...'.
+    Busca todas as transações de um usuário, normalizando o número de telefone
+    para garantir a correspondência com o formato salvo pelo Twilio.
     """
-    sender_id_formatado = f"whatsapp:+{telefone}"
-    print(f"Buscando transações para o sender_id: {sender_id_formatado}")
+    # --- Bloco de Normalização do Telefone ---
+    # 1. Remove qualquer caractere não numérico que o usuário possa ter digitado (ex: '+', '-', ' ').
+    telefone_limpo = ''.join(filter(str.isdigit, telefone))
+    
+    # 2. Garante que o número comece com o código do país (55).
+    #    Isso lida com o caso do usuário digitar só o número local (ex: 119...).
+    if not telefone_limpo.startswith('55'):
+        telefone_limpo = f"55{telefone_limpo}"
+    
+    # 3. Monta o ID final no formato exato que o Twilio salva no banco de dados.
+    sender_id_formatado = f"whatsapp:+{telefone_limpo}"
+    
+    print(f"Buscando transações para o sender_id NORMALIZADO: {sender_id_formatado}")
+    # --- Fim do Bloco de Normalização ---
 
+    # A query agora usa o ID formatado corretamente para a busca.
     transacoes = db.query(models.Transaction)\
                    .filter(models.Transaction.sender_id == sender_id_formatado)\
                    .order_by(models.Transaction.created_at.desc())\
                    .all()
 
     if not transacoes:
-        # Se não encontrarmos transações, é melhor retornar um erro 404.
-        # O dashboard saberá como lidar com isso.
+        # Se, mesmo após a normalização, não houver transações, retorna o erro 404.
+        # O dashboard saberá como lidar com esta resposta.
         raise HTTPException(status_code=404, detail="Nenhuma transação encontrada para este usuário.")
-
+        
+    # Se encontrar, retorna a lista de transações. 
+    # FastAPI cuidará da conversão para o formato JSON usando o nosso schema.
     return transacoes
+
 
 @app.post("/webhook/twilio")
 async def webhook_twilio(request: Request, db: Session = Depends(get_db)):

@@ -79,14 +79,25 @@ with col2:
             df['valor'] = pd.to_numeric(df['valor'])
             
             st.dataframe(
-                df[['criado_em', 'tipo', 'descricao', 'valor']],
-                column_config={
-                    "criado_em": st.column_config.DatetimeColumn("Data", format="DD/MM/YYYY HH:mm"),
-                    "tipo": "Tipo", "descricao": "Descrição",
-                    "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f")
-                },
-                use_container_width=True, hide_index=True
-            )
+    # Pedimos as colunas novas e corretas
+    df[['created_at', 'item', 'categoria', 'valor']],
+    
+    # Configuramos os nomes e formatos para as novas colunas
+    column_config={
+        "created_at": st.column_config.DatetimeColumn(
+            "Data",
+            format="DD/MM/YYYY HH:mm"
+        ),
+        "item": "Item",
+        "categoria": "Categoria",
+        "valor": st.column_config.NumberColumn(
+            "Valor (R$)",
+            format="R$ %.2f"
+        )
+    },
+    use_container_width=True, 
+    hide_index=True
+)
         else:
             st.info("Nenhuma transação encontrada para este usuário.")
             
