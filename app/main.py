@@ -1,6 +1,8 @@
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
+from twilio.twiml.messaging_response import MessagingResponse
+import os
 from sqlalchemy.orm import Session
 from decimal import Decimal
 from typing import List, Optional
@@ -18,6 +20,33 @@ app = FastAPI(
     title="Radar Financeiro API",
     description="API para gerenciar transações financeiras e interagir com IA."
 )
+
+@app.post("/webhook/twilio")
+async def webhook_twilio(request: Request):
+    """
+    Este endpoint recebe as mensagens enviadas via WhatsApp pelo Twilio.
+    """
+    try:
+        # O Twilio envia dados como um formulário, então usamos request.form()
+        form_data = await request.form()
+        message_body = form_data.get("Body", "") # Conteúdo da mensagem do usuário
+        sender_id = form_data.get("From", "")     # Número do usuário (ex: "whatsapp:+5511999998888")
+
+        # Imprimimos no terminal para depurar e ver a mágica acontecendo
+        print(f"Mensagem recebida de {sender_id}: {message_body}")
+
+        # --- A Resposta Inteligente ---
+        # Por enquanto, vamos criar uma resposta simples de confirmação
+        # Usamos a classe MessagingResponse da biblioteca da Twilio
+        twiml_response = MessagingResponse()
+        twiml_response.message(f"Radar Financeiro recebeu: '{message_body}'. Estamos processando!")
+
+        # Retornamos a resposta no formato TwiML (um tipo de XML) que o Twilio entende
+        return Response(content=str(twiml_response), media_type="application/xml")
+
+    except Exception as e:
+        print(f"Erro no webhook: {e}")
+        return Response(content="Ocorreu um erro interno no webhook.", status_code=500)
 
 # =================================================================
 # DEPENDÊNCIA: Gerenciador de Sessão do Banco de Dados
