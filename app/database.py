@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # "sqlite:///" indica que estamos usando o dialeto SQLite.
 # "radar.db" é o nome do arquivo que será o nosso banco de dados.
 # O comentário é uma excelente prática, lembrando de trocar para um banco mais robusto em produção.
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:Luiz1610*@db.cqmxiirynmeehctvbewp.supabase.co:5432/postgres"
+SQLALCHEMY_DATABASE_URL = "postgresql://postgres:CydjBVZJ9EcflW59@db.cqmxiirynmeehctvbewp.supabase.co:5432/postgres"
 
 # Cria o "motor" da aplicação, o ponto central de comunicação com o banco de dados.
 # É configurado para usar o endereço que definimos acima.
