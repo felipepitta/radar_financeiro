@@ -36,6 +36,14 @@ with col1:
         submitted = st.form_submit_button("✔️ Adicionar")
 
         if submitted:
+            
+            if submitted:
+                # ---> ADICIONE ESTA VERIFICAÇÃO <---
+                if not descricao.strip():
+                    st.error("O campo 'Descrição' não pode ser vazio.")
+                    # st.stop() para a execução aqui se a descrição for vazia
+                    st.stop() 
+            
             # Monta a mensagem do comando, como se viesse do chatbot
             mensagem_comando = f"{tipo}: {valor_input} {descricao}"
             
