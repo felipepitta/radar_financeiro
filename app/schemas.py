@@ -1,6 +1,6 @@
 # app/schemas.py (versão final e completa)
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
@@ -8,6 +8,16 @@ from typing import List, Optional
 # -------------------------------------------------------------------
 # SCHEMAS PARA EVENTOS
 # -------------------------------------------------------------------
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    phone: str
+    name: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
 
 class EventoBase(BaseModel):
     """Campos que um evento sempre terá."""

@@ -1,232 +1,187 @@
-# 1. Bibliotecas padrão do Python
+# -----------------------------------------------------------------------------
+# main.py - Ponto de Entrada Principal da API FastAPI
+# -----------------------------------------------------------------------------
+# Este arquivo define a aplicação FastAPI, inicializa as conexões
+# e declara todos os endpoints (rotas) da nossa API.
+# -----------------------------------------------------------------------------
+
+# 1. Imports de Bibliotecas
+# Bibliotecas padrão do Python
 import os
-from dotenv import load_dotenv
-from decimal import Decimal
-from typing import List, Optional
+from typing import List
 
-# Carregamento do .env
-load_dotenv()
-
-# 2. Bibliotecas de terceiros (pip install)
-import uvicorn
+# Bibliotecas de terceiros
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response, Form, Depends, HTTPException
+from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from sqlalchemy.orm import Session
+from supabase import create_client, Client
 from twilio.twiml.messaging_response import MessagingResponse
 
-# 3. Imports da nossa própria aplicação
+# Imports da nossa própria aplicação
 from . import models, schemas, ia
-from .database import SessionLocal, engine, get_db
+from .database import engine, get_db
 
-# Cria as tabelas (OK para desenvolvimento)
+# -----------------------------------------------------------------------------
+# 2. Configuração e Inicialização da Aplicação
+# -----------------------------------------------------------------------------
+
+# Carrega as variáveis de ambiente do arquivo .env no início de tudo.
+load_dotenv()
+
+# Inicializa o cliente do Supabase para operações de backend (com a chave de serviço).
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+supabase_backend_client: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Garante que todas as tabelas definidas em 'models.py' sejam criadas no banco
+# de dados quando a aplicação inicia, caso ainda não existam.
 models.Base.metadata.create_all(bind=engine)
 
+# Cria a instância principal da aplicação FastAPI.
 app = FastAPI(
     title="Radar Financeiro API",
-    description="API para gerenciar transações financeiras e interagir com IA."
+    description="API para gerenciar transações financeiras, usuários e interagir com IA."
 )
 
-@app.get("/users/{telefone}/transactions", response_model=List[schemas.Transaction])
+# -----------------------------------------------------------------------------
+# 3. Endpoints de Autenticação
+# -----------------------------------------------------------------------------
+
+@app.post("/auth/signup", summary="Registra um novo usuário")
+def auth_signup(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    Cria um usuário no Supabase Auth e, em caso de sucesso, cria um perfil
+    correspondente na nossa tabela pública 'users'.
+    """
+    print(f"Recebida solicitação de cadastro para: {user_data.email}")
+    try:
+        # Cria o usuário no serviço de autenticação
+        auth_response = supabase_backend_client.auth.sign_up({
+            "email": user_data.email, "password": user_data.password,
+            "options": {"data": {"phone": ''.join(filter(str.isdigit, user_data.phone))}}
+        })
+        
+        # Se o usuário foi criado no Auth, pega o ID dele
+        new_user_id = auth_response.user.id
+        
+        # Cria o perfil do usuário na nossa tabela 'users'
+        user_profile = models.User(id=new_user_id, email=user_data.email, name=user_data.name)
+        db.add(user_profile)
+        db.commit()
+        
+        print(f"Perfil de usuário criado com sucesso para ID: {new_user_id}")
+        return {"message": "Usuário criado com sucesso! Verifique seu email para confirmação."}
+
+    except Exception as e:
+        print(f"Erro ao criar usuário: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/auth/login", summary="Autentica um usuário")
+def auth_login(user_credentials: schemas.UserLogin):
+    """
+    Autentica um usuário com email e senha via Supabase Auth e retorna
+    a sessão (incluindo o token JWT) se as credenciais forem válidas.
+    """
+    print(f"Recebida solicitação de login para: {user_credentials.email}")
+    try:
+        user_session = supabase_backend_client.auth.sign_in_with_password(
+            {"email": user_credentials.email, "password": user_credentials.password}
+        )
+        return {"user": user_session.user.dict(), "session": user_session.session.dict()}
+    except Exception as e:
+        print(f"Falha no login para {user_credentials.email}: {e}")
+        raise HTTPException(status_code=401, detail="Credenciais de login inválidas.")
+
+
+# -----------------------------------------------------------------------------
+# 4. Endpoints de Dados
+# -----------------------------------------------------------------------------
+
+@app.get("/users/{telefone}/transactions", response_model=List[schemas.Transaction], summary="Lista as transações de um usuário")
 def get_user_transactions(telefone: str, db: Session = Depends(get_db)):
     """
-    Busca todas as transações de um usuário, normalizando o número de telefone
-    para garantir a correspondência com o formato salvo pelo Twilio.
+    Busca todas as transações de um usuário, usando o número de telefone
+    normalizado para encontrar o 'sender_id' correspondente.
     """
-    # --- Bloco de Normalização do Telefone ---
-    # 1. Remove qualquer caractere não numérico que o usuário possa ter digitado (ex: '+', '-', ' ').
     telefone_limpo = ''.join(filter(str.isdigit, telefone))
-    
-    # 2. Garante que o número comece com o código do país (55).
-    #    Isso lida com o caso do usuário digitar só o número local (ex: 119...).
     if not telefone_limpo.startswith('55'):
         telefone_limpo = f"55{telefone_limpo}"
-    
-    # 3. Monta o ID final no formato exato que o Twilio salva no banco de dados.
     sender_id_formatado = f"whatsapp:+{telefone_limpo}"
     
     print(f"Buscando transações para o sender_id NORMALIZADO: {sender_id_formatado}")
-    # --- Fim do Bloco de Normalização ---
 
-    # A query agora usa o ID formatado corretamente para a busca.
     transacoes = db.query(models.Transaction)\
                    .filter(models.Transaction.sender_id == sender_id_formatado)\
                    .order_by(models.Transaction.created_at.desc())\
                    .all()
 
     if not transacoes:
-        # Se, mesmo após a normalização, não houver transações, retorna o erro 404.
-        # O dashboard saberá como lidar com esta resposta.
         raise HTTPException(status_code=404, detail="Nenhuma transação encontrada para este usuário.")
         
-    # Se encontrar, retorna a lista de transações. 
-    # FastAPI cuidará da conversão para o formato JSON usando o nosso schema.
     return transacoes
 
+# -----------------------------------------------------------------------------
+# 5. Webhook Principal (Twilio)
+# -----------------------------------------------------------------------------
 
-@app.post("/webhook/twilio")
+@app.post("/webhook/twilio", summary="Recebe mensagens do WhatsApp via Twilio")
 async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
     """
-    Recebe uma mensagem do Twilio, salva a transação bruta, a enriquece com dados da IA,
-    e responde de forma inteligente para o usuário.
+    Ponto de entrada para todas as mensagens do WhatsApp. Ele salva a mensagem,
+    a enriquece com dados da IA e responde ao usuário.
     """
-    # Bloco Try/Except: Uma rede de segurança para capturar qualquer erro inesperado
-    # que possa acontecer durante o processamento, evitando que a aplicação quebre.
     try:
-        # --- 1. RECEPÇÃO E PARSE DA MENSAGEM ---
-        # Pega os dados do formulário enviado pela Twilio.
         form_data = await request.form()
         message_body = form_data.get("Body", "Mensagem vazia")
         sender_id = form_data.get("From", "Número desconhecido")
 
         print(f"MENSAGEM RECEBIDA de {sender_id}: {message_body}")
 
-        # --- 2. PERSISTÊNCIA INICIAL ---
-        # Cria um registro inicial no banco de dados apenas com a mensagem bruta.
-        # Isso garante que nenhuma mensagem seja perdida, mesmo que a IA falhe.
-        raw_transaction = models.Transaction(
+        # Busca o usuário na nossa tabela 'users' para obter o ID de autenticação.
+        # Esta lógica precisará ser aprimorada para lidar com números não cadastrados.
+        dono_da_transacao = db.query(models.User).filter(models.User.email.contains(sender_id.split(':')[-1][2:])).first() # Este é um HACK temporário
+
+        # Persistência Inicial
+        nova_transacao = models.Transaction(
             sender_id=sender_id,
+            owner_id=dono_da_transacao.id if dono_da_transacao else None, # Usa o ID do usuário se encontrado
             message_body=message_body
         )
-        db.add(raw_transaction)
+        db.add(nova_transacao)
         db.commit()
-        db.refresh(raw_transaction) # Atualiza o objeto com o ID gerado pelo banco
-        print(f"Transação bruta salva no DB com ID: {raw_transaction.id}")
+        db.refresh(nova_transacao)
+        print(f"Transação bruta salva no DB com ID: {nova_transacao.id}")
 
-        # --- 3. ANÁLISE COM INTELIGÊNCIA ARTIFICIAL ---
-        # Envia o texto da mensagem para o nosso módulo de IA para extrair dados.
-        print("Enviando para análise da IA...")
+        # Análise com IA
         dados_analisados = ia.analisar_transacao_simples(message_body)
         print(f"IA retornou dados estruturados: {dados_analisados}")
 
-        # --- 4. ENRIQUECIMENTO DOS DADOS NO BANCO ---
-        # Se a IA retornou dados válidos, atualizamos o registro no banco.
+        # Enriquecimento dos Dados no Banco
         if dados_analisados and not dados_analisados.get("error"):
-            # Atualiza o objeto 'raw_transaction' com os novos dados
-            raw_transaction.item = dados_analisados.get('item')
-            raw_transaction.valor = dados_analisados.get('valor')
-            raw_transaction.categoria = dados_analisados.get('categoria')
-            
-            db.commit() # Salva as novas informações no banco
-            print(f"Transação ID {raw_transaction.id} enriquecida com dados da IA.")
+            nova_transacao.item = dados_analisados.get('item')
+            nova_transacao.valor = dados_analisados.get('valor')
+            nova_transacao.categoria = dados_analisados.get('categoria')
+            db.commit()
+            print(f"Transação ID {nova_transacao.id} enriquecida com dados da IA.")
         
-        # --- 5. CONSTRUÇÃO DA RESPOSTA PARA O WHATSAPP ---
+        # Construção da Resposta para o WhatsApp
         twiml_response = MessagingResponse()
-        
-        # Se a IA funcionou, cria uma resposta rica para o usuário.
         if dados_analisados and not dados_analisados.get("error"):
-            # CORREÇÃO DO BUG: Verifica se o valor é None ANTES de formatar.
             valor_recebido = dados_analisados.get('valor')
             valor_numerico = valor_recebido if valor_recebido is not None else 0.0
-            
             item = dados_analisados.get('item', 'não identificado')
             categoria = dados_analisados.get('categoria', 'não identificada')
-            
-            resposta_formatada = (
-                f"Entendido! ✅\n\n"
-                f"Item: *{item}*\n"
-                f"Valor: *R$ {valor_numerico:.2f}*\n"
-                f"Categoria: *{categoria}*"
-            )
+            resposta_formatada = (f"Entendido! ✅\n\nItem: *{item}*\nValor: *R$ {valor_numerico:.2f}*\nCategoria: *{categoria}*")
             twiml_response.message(resposta_formatada)
         else:
-            # Caso a IA falhe, envia uma resposta padrão.
             twiml_response.message("Recebido! Salvei sua anotação, mas não consegui extrair os detalhes.")
 
-        # --- 6. ENVIO DA RESPOSTA ---
-        # Retorna a resposta no formato XML que a Twilio espera.
         return Response(content=str(twiml_response), media_type="application/xml")
 
     except Exception as e:
-        # Se qualquer erro não previsto ocorrer, ele será capturado aqui.
-        print(f"--- ERRO CRÍTICO NO WEBHOOK ---")
-        print(f"TIPO DE ERRO: {type(e).__name__}")
-        print(f"MENSAGEM DO ERRO: {e}")
-        db.rollback() # Desfaz qualquer alteração pendente no banco para manter a consistência.
-        
-        # Envia uma mensagem de erro amigável para o usuário.
+        print(f"--- ERRO CRÍTICO NO WEBHOOK: {e} ---")
+        db.rollback()
         error_response = MessagingResponse()
-        error_response.message("Desculpe, ocorreu um erro inesperado ao processar sua mensagem. Tente novamente.")
+        error_response.message("Desculpe, ocorreu um erro inesperado ao processar sua mensagem.")
         return Response(content=str(error_response), media_type="application/xml")
-
-# =================================================================
-# DEPENDÊNCIA: Gerenciador de Sessão do Banco de Dados
-# =================================================================
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# =================================================================
-# ENDPOINT DE LEITURA: /users/{telefone}/events
-# (MOVEMOS ELE PARA CIMA, PARA O LUGAR CORRETO)
-# =================================================================
-@app.get("/users/{telefone}/events", response_model=List[schemas.Evento], summary="Lista todos os eventos de um usuário específico")
-def get_user_events(telefone: str, db: Session = Depends(get_db)):
-    """
-    Busca um usuário pelo telefone e retorna todos os seus eventos.
-    O 'response_model' garante que a saída seja uma lista de eventos
-    formatada segundo o schema 'schemas.Evento'.
-    """
-    usuario = db.query(models.Usuario).filter(models.Usuario.telefone == telefone).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
-    # A lógica interna não muda. O FastAPI usa o response_model para fazer a conversão.
-    return usuario.eventos
-
-# =================================================================
-# ENDPOINT DE ESCRITA: /webhook
-# =================================================================
-@app.post("/webhook", summary="Recebe e processa mensagens do usuário")
-async def receber_mensagem(msg: schemas.WebhookIn, db: Session = Depends(get_db)):
-    # A parte de encontrar/criar usuário continua igual
-    usuario = db.query(models.Usuario).filter(models.Usuario.telefone == msg.telefone).first()
-    if not usuario:
-        usuario = models.Usuario(telefone=msg.telefone, nome=f"Usuário {msg.telefone}")
-        db.add(usuario)
-        db.commit()
-        db.refresh(usuario)
-
-    texto = msg.mensagem.lower().strip()
-
-    # Bloco try/except limpo, voltando a capturar apenas erros de valor/índice
-    try:
-        if texto.startswith("receita:"):
-            partes = texto.replace("receita:", "").strip().split()
-            if len(partes) < 2:
-                raise ValueError("Formato inválido. Use: receita <valor> <descrição>")
-            valor_str = partes[0].replace(",",".")
-            valor = Decimal(valor_str)
-            descricao = " ".join(partes[1:])
-            novo_evento = models.Evento(usuario_id=usuario.id, tipo="receita", valor=valor, descricao=descricao)
-            db.add(novo_evento)
-            db.commit()
-            return {"resposta": f"Receita de R$ {valor:.2f} ({descricao}) registrada."}
-
-        elif texto.startswith("gasto:"):
-            partes = texto.replace("gasto:", "").strip().split()
-            if len(partes) < 2:
-                raise ValueError("Formato inválido. Use: gasto <valor> <descrição>")
-            valor_str = partes[0].replace(",",".")
-            valor = Decimal(valor_str)
-            descricao = " ".join(partes[1:])
-            novo_evento = models.Evento(usuario_id=usuario.id, tipo="gasto", valor=valor, descricao=descricao)
-            db.add(novo_evento)
-            db.commit()
-            return {"resposta": f"Gasto de R$ {valor:.2f} ({descricao}) registrado."}
-        
-        else: # Se não for um comando, vai para a IA
-            resposta_ia = await ia.consulta_ia(telefone=usuario.telefone, prompt=texto)
-            return {"resposta": resposta_ia}
-
-    except (ValueError, IndexError) as e:
-        # Retorna o erro de formato para o usuário de forma amigável
-        return {"resposta": f"Erro ao processar seu comando: {e}. Tente novamente."}
-
-# =================================================================
-# Bloco para rodar em desenvolvimento (AGORA NO FINAL DE TUDO)
-# =================================================================
-if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

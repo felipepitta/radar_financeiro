@@ -1,69 +1,56 @@
-# Importa todas as ferramentas necessárias do SQLAlchemy e do Python
+# -----------------------------------------------------------------------------
+# models.py - Definição das Tabelas do Banco de Dados
+# -----------------------------------------------------------------------------
+# Este arquivo contém os modelos do SQLAlchemy, que são representações em Python
+# das tabelas do nosso banco de dados PostgreSQL. Cada classe aqui é uma tabela.
+# -----------------------------------------------------------------------------
+
+# 1. Imports: Agrupados por tipo para melhor legibilidade
+# Bibliotecas padrão do Python
+from datetime import datetime
+
+# Bibliotecas de terceiros (SQLAlchemy)
 from sqlalchemy import (
-    Column, 
-    Integer, 
-    String, 
-    DateTime, 
-    ForeignKey, 
-    Numeric,
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    DECIMAL, # Usado para precisão monetária
     func
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
 
-# Importa a classe Base, que é a fundação para os modelos
+# Imports da nossa aplicação
 from .database import Base
 
 
-class Usuario(Base):
-    """
-    Define o modelo para a tabela de 'usuarios'.
-    Cada instância desta classe representa uma linha na tabela 'usuarios'.
-    """
-    __tablename__ = "usuarios"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    nome = Column(String, index=True)
-    telefone = Column(String, unique=True, index=True)
-    
-    # RELACIONAMENTO: Um usuário pode ter múltiplos eventos.
-    # Acessível via 'meu_usuario.eventos'.
-    # 'back_populates' cria a ligação de volta a partir do modelo Evento.
-    eventos = relationship("Evento", back_populates="usuario", cascade="all, delete-orphan")
+# 2. Modelos de Tabela
 
-
-class Evento(Base):
-    """
-    Define o modelo para a tabela de 'eventos' (transações financeiras).
-    Cada instância representa uma linha na tabela 'eventos'.
-    """
-    __tablename__ = "eventos"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    tipo = Column(String)
-    descricao = Column(String)
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    
-    # Usar Numeric para precisão financeira é a melhor prática.
-    valor = Column(Numeric(10, 2), nullable=True)
-    
-    # CHAVE ESTRANGEIRA (FOREIGN KEY): Liga este evento a um usuário.
-    # "usuarios.id" aponta para a tabela 'usuarios' e a coluna 'id'.
-    # O banco de dados agora garante que este 'usuario_id' deve existir na tabela de usuários.
-    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
-    
-    # RELACIONAMENTO: Um evento pertence a um único usuário.
-    # Acessível via 'meu_evento.usuario'.
-    # 'back_populates' cria a ligação de volta a partir do modelo Usuario.
-    usuario = relationship("Usuario", back_populates="eventos")
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Relacionamento para o futuro
+    transactions = relationship("Transaction", back_populates="owner")
 
 class Transaction(Base):
     __tablename__ = "transactions"
-
     id = Column(Integer, primary_key=True, index=True)
-    sender_id = Column(String, nullable=False)
+    
+    # CAMPO CRÍTICO: O número de telefone que enviou a mensagem (ex: whatsapp:+5511...)
+    # Usamos este campo para buscar as transações no dashboard.
+    sender_id = Column(String, index=True, nullable=False)
+    
     message_body = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
     item = Column(String, nullable=True)
-    valor = Column(Numeric(10, 2), nullable=True)
     categoria = Column(String, nullable=True)
+    valor = Column(DECIMAL(10, 2), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Chave estrangeira para o ID do usuário (opcional por enquanto)
+    # No futuro, quando o webhook souber qual usuário está logado, preencheremos isso.
+    owner_id = Column(String, ForeignKey("users.id"), nullable=True)
+    owner = relationship("User", back_populates="transactions")
