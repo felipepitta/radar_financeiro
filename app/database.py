@@ -1,12 +1,11 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from .config import settings # <-- Importa nossa configuração central
 
-# Pega a URL do banco de dados do ambiente, e não mais do código
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+# Usa a variável diretamente do objeto de configurações.
+# Isso garante que a variável já foi lida e validada.
+engine = create_engine(settings.DATABASE_URL)
 
-# O resto do arquivo continua igual...
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
