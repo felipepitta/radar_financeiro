@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     
     # Credenciais da API do Supabase
     SUPABASE_URL: str
-    SUPABASE_KEY: str  # Esta é a chave 'anon' (pública) que o frontend usa
+    # A chave pública 'anon' (SUPABASE_KEY) não é mais necessária no backend,
+    # pois o frontend se comunica com nossa API, não diretamente com o Supabase.
     SUPABASE_SERVICE_KEY: str # Esta é a chave 'service_role' (secreta) para o backend
     
     # Credencial da OpenAI
