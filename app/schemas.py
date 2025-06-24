@@ -1,8 +1,12 @@
-# app/schemas.py
+# ==============================================================================
+# ARQUIVO: app/schemas.py
+# FUNÇÃO: Define o "contrato" de dados da API. Valida os dados que entram
+#         e formata os dados que saem.
+# ==============================================================================
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 
 # -- Schemas de Autenticação --
 class UserCreate(BaseModel):
@@ -14,6 +18,11 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+class AuthResponse(BaseModel):
+    # Schema para a resposta do nosso endpoint de login
+    user: dict
+    session: dict
 
 # -- Schemas de Transação --
 class Transaction(BaseModel):

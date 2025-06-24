@@ -1,40 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from typing import List
-from . import models, schemas
-from .database import get_db
-from .dependencies import supabase_backend_client
+# ==============================================================================
+# ARQUIVO: app/main.py
+# FUNÇÃO: O "Maestro". Monta a aplicação FastAPI e inclui todos os roteadores.
+# ==============================================================================
+from fastapi import FastAPI
+from . import models
+from .database import engine
+from .routers import auth, transactions, webhook
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+# Cria as tabelas no banco de dados, se não existirem
+models.Base.metadata.create_all(bind=engine)
 
-@router.post("/signup", summary="Registra um novo usuário")
-def auth_signup(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
-    # (A lógica de signup que já tínhamos)
-    try:
-        auth_response = supabase_backend_client.auth.sign_up({
-            "email": user_data.email, "password": user_data.password
-        })
-        new_user_id = auth_response.user.id
+app = FastAPI(
+    title="Radar Financeiro API",
+    description="API para gerenciar transações financeiras, usuários e interagir com IA."
+)
 
-        user_profile = models.User(
-            id=new_user_id,
-            email=user_data.email,
-            name=user_data.name,
-            phone=''.join(filter(str.isdigit, user_data.phone))
-        )
-        db.add(user_profile)
-        db.commit()
-        return {"message": "Usuário criado com sucesso!"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# Inclui os roteadores na aplicação principal
+print("INFO: Incluindo roteador de autenticação...")
+app.include_router(auth.router)
+print("INFO: Incluindo roteador de transações...")
+app.include_router(transactions.router)
+print("INFO: Incluindo roteador de webhook...")
+app.include_router(webhook.router)
 
-@router.post("/login", summary="Autentica um usuário")
-def auth_login(user_credentials: schemas.UserLogin):
-    # (A lógica de login que já tínhamos)
-    try:
-        user_session = supabase_backend_client.auth.sign_in_with_password(
-            {"email": user_credentials.email, "password": user_credentials.password}
-        )
-        return {"user": user_session.user.dict(), "session": user_session.session.dict()}
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Credenciais de login inválidas.")
+@app.get("/", summary="Endpoint raiz da API")
+def read_root():
+    return {"status": "Radar Financeiro API está no ar e 100% refatorado!"}
