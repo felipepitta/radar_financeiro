@@ -1,0 +1,18 @@
+[theme]
+# Cor primária para botões e elementos de interação (um azul vibrante)
+primaryColor="#0083B0"
+
+# Cor de fundo principal da aplicação (um cinza bem escuro)
+backgroundColor="#0E1117"
+
+# Cor de fundo para elementos "dentro" de outros, como a barra lateral e containers
+secondaryBackgroundColor="#1C202D"
+
+# Cor do texto principal
+textColor="#FFFFFF"
+
+# Fonte padrão
+font="sans serif"
+
+[server]
+runOnSave = true

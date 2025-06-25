@@ -1,44 +1,89 @@
 # ==============================================================================
 # ARQUIVO: app/routers/auth.py
-# FUNÇÃO: Contém todos os endpoints relacionados à autenticação.
+# FUNÇÃO: Contém todos os endpoints relacionados à autenticação. (v2.0)
 # ==============================================================================
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from .. import schemas, models
 from ..database import get_db
 from ..dependencies import supabase_backend_client
+import re
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/signup", summary="Registra um novo usuário")
+@router.post("/signup", status_code=status.HTTP_201_CREATED, summary="Registra um novo usuário")
 def auth_signup(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+    """
+    Cria um usuário na autenticação do Supabase e um perfil no banco de dados local.
+    Trata erros de duplicação de e-mail/telefone de forma amigável.
+    """
     try:
-        # 1. Cria o usuário no serviço de autenticação do Supabase
+        # 1. Normaliza o telefone antes de qualquer operação
+        phone_normalized = re.sub(r'\D', '', user_data.phone)
+        if not phone_normalized.startswith("55"):
+             phone_normalized = f"55{phone_normalized}"
+
+        # 2. Cria o usuário no serviço de autenticação do Supabase
         auth_response = supabase_backend_client.auth.sign_up({
             "email": user_data.email, "password": user_data.password
         })
         new_user_id = auth_response.user.id
         
-        # 2. Cria o perfil do usuário na nossa tabela 'users'
+        # 3. Cria o perfil do usuário na nossa tabela 'users'
         user_profile = models.User(
             id=new_user_id,
             email=user_data.email,
             name=user_data.name,
-            phone=''.join(filter(str.isdigit, user_data.phone))
+            phone=phone_normalized
         )
         db.add(user_profile)
         db.commit()
         return {"message": "Usuário criado com sucesso!"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/login", response_model=schemas.AuthResponse, summary="Autentica um usuário")
-def auth_login(user_credentials: schemas.UserLogin):
+    except IntegrityError as e:
+        db.rollback()
+        error_detail = str(e.orig)
+        if "users_email_key" in error_detail or "ix_users_email" in error_detail:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este e-mail já está em uso.")
+        if "users_phone_key" in error_detail or "ix_users_phone" in error_detail:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este telefone já está em uso.")
+        # Se for outra violação de integridade, mostra um erro genérico
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Erro ao criar usuário devido a uma violação de dados.")
+    
+    except Exception as e:
+        # Pega outros erros da API do Supabase, como senhas fracas
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.post("/login", response_model=schemas.AuthResponse, summary="Autentica um usuário por e-mail ou telefone")
+def auth_login(user_credentials: schemas.UserLogin, db: Session = Depends(get_db)):
+    """
+    Autentica um usuário usando e-mail ou telefone.
+    Busca o e-mail correspondente se o login for por telefone, pois o Supabase requer e-mail.
+    """
+    login_identifier = user_credentials.username
+    
+    # Se o identificador não for um e-mail, consideramos como telefone
+    if "@" not in login_identifier:
+        phone_normalized = re.sub(r'\D', '', login_identifier)
+        if not phone_normalized.startswith("55"):
+             phone_normalized = f"55{phone_normalized}"
+        
+        user_profile = db.query(models.User).filter(models.User.phone == phone_normalized).first()
+        if not user_profile:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas.")
+        
+        # Encontramos o perfil, agora usamos o e-mail para autenticar no Supabase
+        email_to_auth = user_profile.email
+    else:
+        # Se for um e-mail, usamos diretamente
+        email_to_auth = login_identifier
+
     try:
         user_session = supabase_backend_client.auth.sign_in_with_password(
-            {"email": user_credentials.email, "password": user_credentials.password}
+            {"email": email_to_auth, "password": user_credentials.password}
         )
-        # Retorna a sessão completa, que contém o token de acesso
         return user_session.dict()
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Credenciais de login inválidas.")
+
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas.")
