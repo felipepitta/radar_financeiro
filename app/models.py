@@ -2,6 +2,8 @@
 # ARQUIVO: app/models.py
 # FUNÇÃO: Define a estrutura das nossas tabelas no banco de dados.
 # ==============================================================================
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, DECIMAL, func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -9,8 +11,8 @@ from .database import Base
 class User(Base):
     """Representa a tabela 'users'."""
     __tablename__ = "users"
-    id = Column(String, primary_key=True)  # ID do Supabase Auth
-    name = Column(String, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=True) 
     email = Column(String, unique=True, index=True, nullable=False)
     phone = Column(String, unique=True, index=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

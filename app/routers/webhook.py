@@ -2,7 +2,7 @@
 # ARQUIVO: app/routers/webhook.py
 # FUNÇÃO: Contém o endpoint que recebe as mensagens do WhatsApp via Twilio.
 # ==============================================================================
-from fastapi import APIRouter, Request, Response, Depends
+from fastapi import APIRouter, Request, Response, Depends, status # Adicione 'status'
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 from .. import models, ia
@@ -17,7 +17,7 @@ def get_or_create_user_by_phone(db: Session, phone_number: str) -> models.User:
     
     if not user:
         print(f"INFO: Criando novo usuário para o telefone: {phone_number}")
-        new_user = models.User(phone=phone_number) # Adicione outros campos se houver, ex: name
+        new_user = models.User(phone=phone_number)
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
@@ -27,46 +27,40 @@ def get_or_create_user_by_phone(db: Session, phone_number: str) -> models.User:
 
 router = APIRouter(tags=["Webhook"])
 
-@router.post("/webhook/twilio", summary="Recebe mensagens do WhatsApp")
+@router.post("/webhook/twilio", summary="Recebe e processa mensagens do WhatsApp")
 async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
     try:
         form_data = await request.form()
         message_body = form_data.get("Body", "Mensagem vazia")
-        sender_id = form_data.get("From", "Número desconhecido") # ex: "whatsapp:+5511..."
+        sender_id = form_data.get("From", "Número desconhecido")
         
+        # --- LÓGICA DE USUÁRIO ROBUSTA ---
+        # AQUI ESTÁ A MUDANÇA: Usamos nossa nova função!
         telefone_usuario = sender_id.replace("whatsapp:+", "")
-        dono_da_transacao = db.query(models.User).filter(models.User.phone == telefone_usuario).first()
+        dono_da_transacao = get_or_create_user_by_phone(db=db, phone_number=telefone_usuario)
 
-        if not dono_da_transacao:
-            # Lógica para lidar com números não cadastrados (opcional)
-            print(f"AVISO: Mensagem recebida de um número não cadastrado: {sender_id}")
-            # Poderíamos criar um usuário "convidado" ou simplesmente ignorar.
-            # Por enquanto, vamos salvar a transação sem um 'owner_id'.
-            # Esta é uma decisão de negócio importante. Para o teste, vamos permitir.
-            # Em um cenário real, provavelmente só aceitaríamos de usuários cadastrados.
-            pass # Continua a execução
-
-        # Persistência Inicial
+        # --- PERSISTÊNCIA INICIAL ---
+        # Agora, owner_id sempre será um ID válido.
         nova_transacao = models.Transaction(
             sender_id=sender_id,
-            owner_id=dono_da_transacao.id if dono_da_transacao else "user_nao_cadastrado", # Ajuste temporário
+            owner_id=dono_da_transacao.id, # ✅ Problema resolvido!
             message_body=message_body
         )
         db.add(nova_transacao)
         db.commit()
         db.refresh(nova_transacao)
 
-        # Análise com IA
+        # --- ANÁLISE COM IA (sem alterações) ---
         dados_analisados = ia.analisar_transacao_simples(message_body)
 
-        # Enriquecimento dos Dados no Banco
+        # --- ENRIQUECIMENTO DOS DADOS (sem alterações) ---
         if dados_analisados and not dados_analisados.get("error"):
             nova_transacao.item = dados_analisados.get('item')
             nova_transacao.valor = dados_analisados.get('valor')
             nova_transacao.categoria = dados_analisados.get('categoria')
             db.commit()
         
-        # Construção da Resposta para o WhatsApp
+        # --- RESPOSTA PARA O WHATSAPP (sem alterações) ---
         twiml_response = MessagingResponse()
         if dados_analisados and not dados_analisados.get("error"):
             valor_recebido = dados_analisados.get('valor')
@@ -82,7 +76,15 @@ async def webhook_twilio(request: Request, db: Session = Depends(get_db)):
 
     except Exception as e:
         print(f"--- ERRO CRÍTICO NO WEBHOOK: {e} ---")
-        db.rollback()
+        if db.is_active:
+            db.rollback()
+        
         error_response = MessagingResponse()
-        error_response.message("Desculpe, ocorreu um erro inesperado.")
-        return Response(content=str(error_response), media_type="application/xml")
+        error_response.message("Desculpe, ocorreu um erro inesperado ao processar sua mensagem. Nossa equipe já foi notificada.")
+        
+        # ✅ Retornamos um erro 500 para sinalizar ao Twilio que algo falhou do nosso lado.
+        return Response(
+            content=str(error_response),
+            media_type="application/xml",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
