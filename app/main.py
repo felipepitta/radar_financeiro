@@ -46,6 +46,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Inclui os roteadores na aplicação principal
 print("INFO: Incluindo roteador de autenticação...")
 app.include_router(auth.router)
+print("--- SENSOR 2: Prestes a incluir o roteador de TRANSACTIONS.")
+# -----------------------------
 print("INFO: Incluindo roteador de transações...")
 app.include_router(transactions.router)
 print("INFO: Incluindo roteador de webhook...")
@@ -54,3 +56,18 @@ app.include_router(webhook.router)
 @app.get("/", summary="Endpoint raiz da API")
 def read_root():
     return {"status": "Radar Financeiro API está no ar e 100% refatorado!"}
+
+@app.on_event("startup")
+def print_all_routes():
+    """
+    Na inicialização, imprime uma lista de todas as rotas registradas.
+    Isso nos dará a prova final se a rota '/transactions/me' está registrada.
+    """
+    print("\n--- ROTAS REGISTRADAS NA APLICAÇÃO ---")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
+        else:
+            # Para outros tipos de rota como Mount
+            print(f"Path: {route.path}, Name: {type(route).__name__}")
+    print("----------------------------------------\n")

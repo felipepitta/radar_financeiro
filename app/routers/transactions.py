@@ -11,6 +11,9 @@ from ..dependencies import get_current_user
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
+print("--- SENSOR 1: Roteador de TRANSACTIONS definido com prefixo '/transactions'.")
+# -----------------------------
+
 @router.get("/me", response_model=List[schemas.Transaction], summary="Lista as transações do usuário autenticado")
 def get_my_transactions(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """
