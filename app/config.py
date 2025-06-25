@@ -13,11 +13,9 @@ class Settings(BaseSettings):
     # Conexão com o banco de dados (usando o Connection Pooler)
     DATABASE_URL: str
     
-    # Credenciais da API do Supabase
+    # Credenciais da API do Supabase - Apenas as necessárias para o backend
     SUPABASE_URL: str
-    # A chave pública 'anon' (SUPABASE_KEY) não é mais necessária no backend,
-    # pois o frontend se comunica com nossa API, não diretamente com o Supabase.
-    SUPABASE_SERVICE_KEY: str # Esta é a chave 'service_role' (secreta) para o backend
+    SUPABASE_SERVICE_KEY: str # Chave secreta para operações de backend
     
     # Credencial da OpenAI
     OPENAI_API_KEY: str

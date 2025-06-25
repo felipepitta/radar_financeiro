@@ -3,6 +3,8 @@
 # FUNÇÃO: O "Maestro". Monta a aplicação FastAPI e inclui todos os roteadores.
 # ==============================================================================
 from fastapi import FastAPI
+from dotenv import load_dotenv
+load_dotenv()
 from . import models
 from .database import engine
 from .routers import auth, transactions, webhook

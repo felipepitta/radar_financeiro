@@ -8,6 +8,23 @@ from twilio.twiml.messaging_response import MessagingResponse
 from .. import models, ia
 from ..database import get_db
 
+def get_or_create_user_by_phone(db: Session, phone_number: str) -> models.User:
+    """
+    Busca um usuário pelo número de telefone. Se não encontrar, cria um novo.
+    Retorna sempre uma instância de usuário válida e persistida no banco.
+    """
+    user = db.query(models.User).filter(models.User.phone == phone_number).first()
+    
+    if not user:
+        print(f"INFO: Criando novo usuário para o telefone: {phone_number}")
+        new_user = models.User(phone=phone_number) # Adicione outros campos se houver, ex: name
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+        
+    return user
+
 router = APIRouter(tags=["Webhook"])
 
 @router.post("/webhook/twilio", summary="Recebe mensagens do WhatsApp")
