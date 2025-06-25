@@ -3,7 +3,7 @@
 # FUNÇÃO: Define o "contrato" de dados da API. Valida os dados que entram
 #         e formata os dados que saem.
 # ==============================================================================
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, UUID4
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional, List
@@ -16,7 +16,7 @@ class UserCreate(BaseModel):
     phone: str
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 class AuthResponse(BaseModel):

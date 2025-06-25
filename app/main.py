@@ -2,7 +2,9 @@
 # ARQUIVO: app/main.py
 # FUNÇÃO: O "Maestro". Monta a aplicação FastAPI e inclui todos os roteadores.
 # ==============================================================================
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 load_dotenv()
 from . import models
@@ -16,6 +18,30 @@ app = FastAPI(
     title="Radar Financeiro API",
     description="API para gerenciar transações financeiras, usuários e interagir com IA."
 )
+
+# ✅ --- FILTRO DE SEGURANÇA: EXCEPTION HANDLER ---
+# Este bloco intercepta erros de validação antes de serem enviados.
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handler customizado para tratar erros de validação do Pydantic,
+    removendo dados sensíveis como 'password' da resposta de erro.
+    """
+    error_details = exc.errors()
+    modified_details = []
+    for error in error_details:
+        # Remove o campo 'input' para não expor nenhum dado do usuário
+        if 'input' in error:
+            del error['input']
+        # Remove o campo 'url' que não é necessário para o usuário final
+        if 'url' in error:
+            del error['url']
+        modified_details.append(error)
+
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": modified_details},
+    )
 
 # Inclui os roteadores na aplicação principal
 print("INFO: Incluindo roteador de autenticação...")
