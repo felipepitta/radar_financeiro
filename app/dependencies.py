@@ -1,73 +1,65 @@
 # ==============================================================================
 # ARQUIVO: app/dependencies.py
-# FUNÇÃO: Centraliza a criação de clientes e dependências de autenticação. (v2.0)
+# FUNÇÃO: Centraliza a criação de clientes e dependências de autenticação. (v2.1 - Debug)
 # ==============================================================================
-# Imports do FastAPI e de segurança
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-
-# Imports do banco de dados e dos nossos modelos
 from sqlalchemy.orm import Session
-from .database import get_db
-from . import models
-
-# Imports dos serviços externos
-from supabase import create_client, Client
 from gotrue.errors import AuthApiError
-from .config import settings
 
-# --- SUA LÓGICA ORIGINAL (perfeita, sem alterações) ---
-# Cliente do Supabase para operações de backend (usando a chave de serviço secreta)
+from . import models
+from .database import get_db
+from .config import settings
+from supabase import create_client, Client
+
+
 supabase_backend_client: Client = create_client(
     settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY
 )
 
-# --- NOVA FUNCIONALIDADE (AUTENTICAÇÃO) ---
-
-# 1. O "Guarda de Segurança" do FastAPI
-# Ele sabe que deve procurar por um token no cabeçalho "Authorization".
-# O 'tokenUrl' aponta para o nosso próprio endpoint de login em auth.py.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-
-# 2. A Dependência Principal de Autenticação
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
     """
-    Esta função é o nosso "verificador de identidade" reutilizável.
-    1. Recebe um token da requisição (graças ao oauth2_scheme).
-    2. Valida esse token com o Supabase.
-    3. Usa o ID do usuário validado para buscar nosso perfil no banco de dados local.
-    4. Retorna o objeto completo do nosso usuário (models.User).
-    
-    Qualquer endpoint que precisar de login, vai "depender" desta função.
+    Dependência de autenticação com depuração detalhada.
     """
     try:
-        # Valida o token com o Supabase para obter os dados do usuário autenticado
+        print("\n--- DEBUG [get_current_user]: Iniciando validação de token.")
+        # 1. Valida o token com o Supabase
         user_auth_data = supabase_backend_client.auth.get_user(token)
         
         if not user_auth_data:
+            print("--- DEBUG [get_current_user]: ERRO! Supabase não validou o token.")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Não foi possível validar as credenciais",
+                detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Usa o ID do Supabase para buscar nosso perfil de usuário local
         user_id = user_auth_data.user.id
+        print(f"--- DEBUG [get_current_user]: Token válido. ID do Supabase: {user_id}")
+        
+        # 2. Usa o ID do Supabase para buscar nosso perfil de usuário local
+        print(f"--- DEBUG [get_current_user]: Buscando perfil no banco de dados local com o ID acima...")
         user_profile = db.query(models.User).filter(models.User.id == user_id).first()
         
         if user_profile is None:
+            print(f"--- DEBUG [get_current_user]: FALHA! Perfil com ID {user_id} não encontrado no banco de dados local. Retornando 404.")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Perfil de usuário não encontrado no nosso banco de dados.",
+                detail="User profile not found in our local database.",
             )
             
+        print(f"--- DEBUG [get_current_user]: SUCESSO! Perfil local encontrado para o usuário: {user_profile.email}")
         return user_profile
 
-    except AuthApiError:
-        # Se o token for inválido ou expirado, o Supabase levanta um AuthApiError
+    except AuthApiError as e:
+        print(f"--- DEBUG [get_current_user]: ERRO! O Supabase retornou um AuthApiError: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido ou expirado",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    except Exception as e:
+        print(f"--- DEBUG [get_current_user]: ERRO INESPERADO! {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro interno na validação do usuário.")
