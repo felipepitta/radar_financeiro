@@ -41,11 +41,21 @@ def carregar_transacoes(access_token):
             st.error(f"Não foi possível buscar suas transações. Verifique sua conexão.")
         return None
 
+# --- LINHAS FALTANTES ADICIONADAS AQUI ---
+# 1. Pega o token de autorização da sessão do usuário.
+token = st.session_state.get('access_token')
+
+# 2. CHAMA a função para carregar os dados e armazena o resultado na variável.
+lista_transacoes = carregar_transacoes(token)
+# -----------------------------------------
+
+# Agora o 'if' pode funcionar, pois a variável 'lista_transacoes' existe.
 if lista_transacoes is not None:
     if lista_transacoes:
         df = pd.DataFrame(lista_transacoes)
         # Converte a coluna de valor para numérico para garantir a formatação correta
-        df['valor'] = pd.to_numeric(df['valor'])
+        if 'valor' in df.columns:
+            df['valor'] = pd.to_numeric(df['valor'])
         
         st.dataframe(
             df[['created_at', 'item', 'categoria', 'valor']],
