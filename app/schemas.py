@@ -34,3 +34,9 @@ class Transaction(BaseModel):
 
     class Config:
         from_attributes = True
+
+class TransactionUpdate(BaseModel):
+    item: str
+    valor: float
+    categoria: str
+    created_at: datetime

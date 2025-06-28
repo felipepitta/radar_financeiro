@@ -3,6 +3,7 @@
 # FUNÇÃO: Contém todos os endpoints relacionados à autenticação. (v2.0)
 # ==============================================================================
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from .. import schemas, models
@@ -87,3 +88,43 @@ def auth_login(user_credentials: schemas.UserLogin, db: Session = Depends(get_db
 
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais inválidas.")
+    
+# 1. Define o "esquema" de segurança.
+# A URL 'auth/login' informa ao Swagger/FastAPI qual endpoint ele deve usar 
+# para obter o token.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def get_current_active_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(get_db)
+):
+    """
+    Dependência para ser usada em endpoints protegidos.
+    1. Extrai o token do cabeçalho da requisição.
+    2. Valida o token com o Supabase para obter o usuário.
+    3. Busca o perfil completo do usuário no nosso banco de dados local.
+    4. Retorna o objeto do usuário ou lança uma exceção de não autorizado.
+    """
+    try:
+        # 2. Valida o token com o Supabase. Se o token for inválido ou expirado,
+        # o Supabase vai levantar uma exceção.
+        user_data_from_supabase = supabase_backend_client.auth.get_user(token)
+        user_id = user_data_from_supabase.user.id
+
+        # 3. Busca o usuário correspondente em nosso banco de dados local
+        user_profile = db.query(models.User).filter(models.User.id == user_id).first()
+
+        if user_profile is None:
+            # Caso raro: usuário existe no Supabase mas não no nosso DB
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+        # 4. Retorna o perfil completo do usuário
+        return user_profile
+
+    except Exception:
+        # Se a validação do Supabase falhar por qualquer motivo
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
