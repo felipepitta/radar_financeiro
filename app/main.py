@@ -11,18 +11,17 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # -------------------------------------------------------------
 
+# Carrega as variáveis de ambiente do .env
+from dotenv import load_dotenv
+load_dotenv()
+
+# Agora os outros imports podem ser feitos com segurança
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
-
-# Agora os outros imports podem ser feitos com segurança
 from app import models
 from app.database import engine
 from app.routers import auth, transactions, webhook, ai
-
-# Carrega as variáveis de ambiente do .env
-load_dotenv()
 
 # Cria as tabelas no banco de dados, se não existirem
 models.Base.metadata.create_all(bind=engine)
