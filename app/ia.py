@@ -46,32 +46,43 @@ def analisar_transacao_simples(texto_mensagem: str) -> dict | None:
         print(f"IA (Análise Simples): Ocorreu um erro: {e}")
         return {"error": str(e)}
 
-def gerar_analise_financeira(historico_transacoes: str, pergunta_usuario: str) -> str:
+def gerar_analise_financeira(historico_transacoes_csv: str, pergunta_usuario: str) -> str:
     """
-    Usa a IA para gerar uma análise ou insight com base no histórico de transações e uma pergunta.
-    Esta função é para perguntas complexas (ex: "como foram meus gastos este mês?").
+    Usa a IA para gerar uma análise com base no histórico de transações e uma pergunta do usuário.
+    Esta é a função usada pela página de Recomendações do Dashboard.
     """
     if not client:
         return "Desculpe, meu cérebro de IA não está funcionando no momento."
 
-    print(f"IA (Análise Complexa): Gerando insight para a pergunta: '{pergunta_usuario}'")
+    print(f"IA (Análise de Recomendações): Gerando insight para a pergunta: '{pergunta_usuario}'")
+    
+    # **MELHORIA 1: System Prompt mais detalhado, como no nosso blueprint.**
+    system_prompt = (
+        "Você é o 'Gem Radar', um assistente financeiro amigável e especialista para o app Radar Financeiro. "
+        "Seu tom é prestativo e didático, como um mentor financeiro. Responda em Markdown para melhor formatação no chat. "
+        "Analise os dados de transações do usuário, que estão em formato CSV, e responda à pergunta dele da forma mais útil e clara possível."
+    )
+    
+    # **MELHORIA 2: Dados do usuário claramente formatados e separados da pergunta.**
+    user_prompt_content = (
+        f"**Aqui está o histórico de transações do usuário:**\n"
+        f"```csv\n{historico_transacoes_csv}\n```\n\n"
+        f"**Com base nesses dados, por favor, responda à seguinte pergunta:**\n"
+        f"{pergunta_usuario}"
+    )
+
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {
-                    "role": "system", 
-                    "content": "Você é um assistente financeiro chamado RADAR. Você é objetivo, direto e oferece insights valiosos com base nos dados fornecidos. Responda em português brasileiro."
-                },
-                {
-                    "role": "user", 
-                    "content": f"Meu histórico de transações recentes é:\n\n{historico_transacoes}\n\nCom base nesse histórico, por favor, responda à seguinte pergunta: {pergunta_usuario}"
-                }
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt_content}
             ],
-            temperature=0.5
+            temperature=0.4 # Um pouco menos criativo para manter as respostas mais factuais
         )
+        print("IA (Análise de Recomendações): Resposta recebida da API.")
         return response.choices[0].message.content
 
     except Exception as e:
-        print(f"IA (Análise Complexa): Ocorreu um erro: {e}")
+        print(f"IA (Análise de Recomendações): Ocorreu um erro ao chamar a API: {e}")
         return "Desculpe, não consegui consultar minha inteligência no momento. Tente novamente mais tarde."

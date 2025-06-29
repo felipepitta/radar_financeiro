@@ -2,14 +2,27 @@
 # ARQUIVO: app/main.py
 # FUNÇÃO: O "Maestro". Monta a aplicação FastAPI e inclui todos os roteadores.
 # ==============================================================================
+import sys
+import os
+
+# --- CORREÇÃO DEFINITIVA: O GPS DEVE SER LIGADO PRIMEIRO! ---
+# Colocamos este bloco no TOPO ABSOLUTO do arquivo.
+# Ele ajusta o "mapa" do Python ANTES que qualquer import do nosso app seja tentado.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# -------------------------------------------------------------
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
+
+# Agora os outros imports podem ser feitos com segurança
+from app import models
+from app.database import engine
+from app.routers import auth, transactions, webhook, ai
+
+# Carrega as variáveis de ambiente do .env
 load_dotenv()
-from . import models
-from .database import engine
-from .routers import auth, transactions, webhook
 
 # Cria as tabelas no banco de dados, se não existirem
 models.Base.metadata.create_all(bind=engine)
@@ -20,20 +33,16 @@ app = FastAPI(
 )
 
 # ✅ --- FILTRO DE SEGURANÇA: EXCEPTION HANDLER ---
-# Este bloco intercepta erros de validação antes de serem enviados.
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """
-    Handler customizado para tratar erros de validação do Pydantic,
-    removendo dados sensíveis como 'password' da resposta de erro.
+    Handler customizado para tratar erros de validação do Pydantic.
     """
     error_details = exc.errors()
     modified_details = []
     for error in error_details:
-        # Remove o campo 'input' para não expor nenhum dado do usuário
         if 'input' in error:
             del error['input']
-        # Remove o campo 'url' que não é necessário para o usuário final
         if 'url' in error:
             del error['url']
         modified_details.append(error)
@@ -46,28 +55,24 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Inclui os roteadores na aplicação principal
 print("INFO: Incluindo roteador de autenticação...")
 app.include_router(auth.router)
-print("--- SENSOR 2: Prestes a incluir o roteador de TRANSACTIONS.")
-# -----------------------------
 print("INFO: Incluindo roteador de transações...")
 app.include_router(transactions.router)
 print("INFO: Incluindo roteador de webhook...")
 app.include_router(webhook.router)
+print("INFO: Incluindo roteador de IA...")
+app.include_router(ai.router)
 
 @app.get("/", summary="Endpoint raiz da API")
 def read_root():
-    return {"status": "Radar Financeiro API está no ar e 100% refatorado!"}
+    return {"status": "Radar Financeiro API está no ar e 100% operacional!"}
 
 @app.on_event("startup")
 def print_all_routes():
-    """
-    Na inicialização, imprime uma lista de todas as rotas registradas.
-    Isso nos dará a prova final se a rota '/transactions/me' está registrada.
-    """
+    """Na inicialização, imprime uma lista de todas as rotas registradas."""
     print("\n--- ROTAS REGISTRADAS NA APLICAÇÃO ---")
     for route in app.routes:
         if hasattr(route, "methods"):
             print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
         else:
-            # Para outros tipos de rota como Mount
             print(f"Path: {route.path}, Name: {type(route).__name__}")
     print("----------------------------------------\n")

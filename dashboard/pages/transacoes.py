@@ -69,6 +69,7 @@ def carregar_transacoes(access_token: str) -> pd.DataFrame:
             
         df = pd.DataFrame(data)
         # Converte as colunas para os tipos corretos, garantindo consistência
+        # O argumento 'coerce' transforma erros de conversão em NaT (Not a Time)
         df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce').dt.date
         df['valor'] = pd.to_numeric(df['valor'])
         return df
@@ -109,18 +110,29 @@ st.markdown("Analise suas movimentações de forma rápida e intuitiva.")
 
 # Passo 3.4: Renderizar os Filtros de Data
 with st.expander("📅 Filtros de Período", expanded=True):
+    # ==================== INÍCIO DA LÓGICA CORRIGIDA ====================
+    def obter_data_minima_segura(df: pd.DataFrame) -> date:
+        """Função auxiliar para obter a data mínima de forma segura."""
+        if not df.empty and 'created_at' in df.columns:
+            # Remove quaisquer datas nulas (NaT) antes de calcular o mínimo
+            datas_validas = df['created_at'].dropna()
+            if not datas_validas.empty:
+                return datas_validas.min()
+        return date.today()
+
     # Inicializa as datas no estado da sessão se não existirem
     if 'start_date' not in st.session_state:
-        st.session_state['start_date'] = df_original['created_at'].min() if not df_original.empty else date.today()
+        st.session_state['start_date'] = obter_data_minima_segura(df_original)
     if 'end_date' not in st.session_state:
         st.session_state['end_date'] = date.today()
+    # ===================== FIM DA LÓGICA CORRIGIDA ======================
 
     # Botões de filtro rápido
     botoes_col1, botoes_col2, botoes_col3, botoes_col4 = st.columns(4)
     if botoes_col1.button("Este Mês", use_container_width=True):
         st.session_state['start_date'] = date.today().replace(day=1)
         st.session_state['end_date'] = date.today()
-        st.rerun() # Roda o script novamente para aplicar o filtro
+        st.rerun()
 
     if botoes_col2.button("Últimos 30 dias", use_container_width=True):
         st.session_state['start_date'] = date.today() - timedelta(days=30)
@@ -128,7 +140,7 @@ with st.expander("📅 Filtros de Período", expanded=True):
         st.rerun()
         
     if botoes_col4.button("Limpar Filtros", use_container_width=True, type="primary"):
-        st.session_state['start_date'] = df_original['created_at'].min() if not df_original.empty else date.today()
+        st.session_state['start_date'] = obter_data_minima_segura(df_original)
         st.session_state['end_date'] = date.today()
         st.rerun()
 
@@ -138,10 +150,15 @@ with st.expander("📅 Filtros de Período", expanded=True):
     end_date = datas_col2.date_input("Data Final", value=st.session_state['end_date'])
 
 # Passo 3.5: Aplicar o filtro e criar o DataFrame filtrado
-df_filtrado = df_original[
-    (df_original['created_at'] >= start_date) & 
-    (df_original['created_at'] <= end_date)
-]
+# Garantir que a comparação não falhe se o dataframe estiver vazio
+if not df_original.empty:
+    df_filtrado = df_original[
+        (df_original['created_at'] >= start_date) & 
+        (df_original['created_at'] <= end_date)
+    ]
+else:
+    df_filtrado = pd.DataFrame()
+
 
 st.divider()
 
@@ -152,11 +169,11 @@ if not df_filtrado.empty:
     total_gasto = df_filtrado['valor'].sum()
     num_transacoes = len(df_filtrado)
     media_por_transacao = total_gasto / num_transacoes if num_transacoes > 0 else 0
-    categoria_mais_comum = df_filtrado['categoria'].mode()[0] if not df_filtrado['categoria'].empty else "N/A"
+    categoria_mais_comum = df_filtrado['categoria'].mode()[0] if not df_filtrado['categoria'].empty and not df_filtrado['categoria'].isnull().all() else "N/A"
 
     # Exibição dos KPIs em colunas
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Total Gasto 쓴", f"R$ {total_gasto:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    kpi1.metric("Total Gasto 💸", f"R$ {total_gasto:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     kpi2.metric("Nº de Transações #️⃣", num_transacoes)
     kpi3.metric("Valor Médio 🏧", f"R$ {media_por_transacao:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
     kpi4.metric("Principal Categoria 🏷️", categoria_mais_comum.title())
@@ -170,20 +187,24 @@ st.subheader("Detalhes das Transações")
 if df_filtrado.empty:
     st.success("✔️ Nenhuma transação encontrada para o período selecionado.")
 else:
-    df_filtrado.insert(0, "Selecionar", False)
+    # Renomear colunas para exibição amigável antes do data_editor
+    df_para_exibir = df_filtrado.copy()
+    df_para_exibir.insert(0, "Selecionar", False)
     
     # Exibe a tabela interativa
     df_editado = st.data_editor(
-        df_filtrado,
+        df_para_exibir,
         column_config={
             "id": None, # Oculta a coluna de ID
             "owner_id": None, # Oculta a coluna de owner_id
             "Selecionar": st.column_config.CheckboxColumn(required=True),
             "created_at": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
-            "item": "Item", "categoria": "Categoria",
+            "item": "Item", 
+            "categoria": "Categoria",
             "valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f")
         },
-        use_container_width=True, hide_index=True, key="transaction_editor", disabled=["created_at", "item", "categoria", "valor"]
+        use_container_width=True, hide_index=True, key="transaction_editor", 
+        disabled=["created_at", "item", "categoria", "valor"]
     )
 
     # Lógica para identificar a linha selecionada e exibir o formulário de edição
@@ -201,7 +222,7 @@ else:
             nova_data = row1_col2.date_input("Data", value=transacao_para_editar['created_at'])
 
             # Botão de submissão e lógica de chamada à API
-            if st.form_submit_button("Salvar Alterações"):
+            if st.form_submit_button("Salvar Alterações", use_container_width=True):
                 payload = {
                     "item": novo_item, "valor": novo_valor,
                     "categoria": nova_categoria, "created_at": nova_data.isoformat()
@@ -212,6 +233,8 @@ else:
                     response.raise_for_status()
                     st.success("Transação alterada com sucesso!")
                     time.sleep(1)
+                    # Limpa o cache para forçar o recarregamento dos dados da API
+                    st.cache_data.clear()
                     st.rerun()
                 except requests.exceptions.RequestException as e:
                     st.error(f"Falha ao salvar: {e.response.json() if e.response else e}")
