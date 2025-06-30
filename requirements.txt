@@ -4,6 +4,7 @@
 
 # --- Core do Backend ---
 fastapi
+pydantic[email]
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
