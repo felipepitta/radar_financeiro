@@ -8,6 +8,7 @@ uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 python-dotenv
+pydantic_settings
 
 # --- Segurança e Autenticação ---
 passlib[bcrypt]
