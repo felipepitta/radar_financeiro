@@ -1,4 +1,5 @@
 gotrue==2.12.2
+supabase==2.16.0
 altair==5.5.0
 annotated-types==0.7.0
 anyio==4.8.0
